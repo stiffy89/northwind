@@ -1,0 +1,119 @@
+_schema-version: "3.1"
+ID: northwind
+description: A simple CAP project.
+version: 1.0.0
+modules:
+- name: northwind-destinations
+  type: com.sap.application.content
+  requires:
+  - name: northwind-uaa
+    parameters:
+      service-key:
+        name: northwind-uaa-key
+  - name: northwind-html5-repo-host
+    parameters:
+      service-key:
+        name: northwind-html5-repo-host-key
+  - name: srv-api
+  - name: northwind-destination
+    parameters:
+      content-target: true
+  parameters:
+    content:
+      instance:
+        destinations:
+        - Authentication: OAuth2UserTokenExchange
+          Name: northwind-app-srv
+          TokenServiceInstanceName: northwind-uaa
+          TokenServiceKeyName: northwind-uaa-key
+          URL: ~{srv-api/srv-url}
+          sap.cloud.service: northwind.service
+        - Name: northwind-html5-repo-host
+          ServiceInstanceName: northwind-html5-repo-host
+          ServiceKeyName: northwind-html5-repo-host-key
+          sap.cloud.service: northwind.service
+        - Authentication: OAuth2UserTokenExchange
+          Name: northwind-uaa
+          ServiceInstanceName: northwind-uaa
+          ServiceKeyName: northwind-uaa-key
+          sap.cloud.service: northwind.service
+        existing_destinations_policy: update
+  build-parameters:
+    no-source: true
+- name: northwind-srv
+  type: nodejs
+  path: gen/srv
+  requires:
+  - name: northwind-uaa
+  - name: northwind-destination
+  provides:
+  - name: srv-api
+    properties:
+      srv-url: ${default-url}
+  parameters:
+    buildpack: nodejs_buildpack
+  build-parameters:
+    builder: npm-ci
+- name: northwind-app-content
+  type: com.sap.application.content
+  path: .
+  requires:
+  - name: northwind-html5-repo-host
+    parameters:
+      content-target: true
+  build-parameters:
+    build-result: resources
+    requires:
+    - artifacts:
+      - nsnorthwindproducts.zip
+      name: nsnorthwindproducts
+      target-path: resources/
+- name: nsnorthwindproducts
+  type: html5
+  path: app/northwind_products
+  build-parameters:
+    build-result: dist
+    builder: custom
+    commands:
+    - npm install
+    - npm run build:cf
+    supported-platforms: []
+resources:
+- name: northwind-uaa
+  type: org.cloudfoundry.managed-service
+  parameters:
+    config:
+      tenant-mode: dedicated
+      xsappname: northwind-${org}-${space}
+    path: ./xs-security.json
+    service: xsuaa
+    service-plan: application
+- name: northwind-destination
+  type: org.cloudfoundry.managed-service
+  parameters:
+    config:
+      HTML5Runtime_enabled: true
+      init_data:
+        instance:
+          destinations:
+          - Authentication: NoAuthentication
+            Name: ui5
+            ProxyType: Internet
+            Type: HTTP
+            URL: https://ui5.sap.com
+          existing_destinations_policy: update
+    service: destination
+    service-plan: lite
+- name: northwind-html5-repo-host
+  type: org.cloudfoundry.managed-service
+  parameters:
+    service: html5-apps-repo
+    service-plan: app-host
+parameters:
+  deploy_mode: html5-repo
+  enable-parallel-deployments: true
+build-parameters:
+  before-all:
+  - builder: custom
+    commands:
+    - npx -p @sap/cds-dk cds build --production
